@@ -66,7 +66,9 @@ public class SwipeToAction {
     private Queue<Integer> swipeQueue = new LinkedList<>();
 
 
-    /** Constructor **/
+    /**
+     * Constructor
+     **/
 
     public SwipeToAction(RecyclerView recyclerView, SwipeListener swipeListener) {
         this.recyclerView = recyclerView;
@@ -76,14 +78,34 @@ public class SwipeToAction {
     }
 
 
-    /** Private methods **/
+    /**
+     * Private methods
+     **/
 
     private void init() {
         recyclerView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent ev) {
+
+
+                if (runningAnimationsOn.size() != 0) {
+                    return false;
+                }
                 switch (ev.getAction() & MotionEvent.ACTION_MASK) {
                     case MotionEvent.ACTION_DOWN: {
+
+                        if (frontView != null && frontView.getX() != 0) {
+
+                            resetPosition();
+                            activePointerId = INVALID_POINTER_ID;
+                            clear();
+                            frontView = null;
+                            break;
+                        }
+
+//
+//                        clear();
+
                         // http://android-developers.blogspot.com/2010/06/making-sense-of-multitouch.html
                         activePointerId = ev.getPointerId(0);
 
@@ -164,7 +186,7 @@ public class SwipeToAction {
             return;
         }
 
-        // check if the view is being animated. in that case do not allow to move it
+        // check if the view is being frontView. in that case do not allow to move it
         if (runningAnimationsOn.contains(touchedView)) {
             frontView = null;
             return;
@@ -232,30 +254,53 @@ public class SwipeToAction {
         frontView.animate()
                 .setDuration(RESET_ANIMATION_DURATION)
                 .setInterpolator(new AccelerateDecelerateInterpolator())
-                .setListener(new Animator.AnimatorListener() {
-                    @Override
-                    public void onAnimationStart(Animator animation) {
-                        runningAnimationsOn.add(animated);
-                    }
-
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        runningAnimationsOn.remove(animated);
-                        checkQueue();
-                    }
-
-                    @Override
-                    public void onAnimationCancel(Animator animation) {
-                        runningAnimationsOn.remove(animated);
-                    }
-
-                    @Override
-                    public void onAnimationRepeat(Animator animation) {
-                        runningAnimationsOn.add(animated);
-                    }
-                })
+                .setListener(new MyAnimatorListener(revealLeftView, revealRightView, animated))
                 .x(frontViewX);
+
     }
+
+
+    class MyAnimatorListener implements Animator.AnimatorListener {
+
+        private View revealLeftView;
+        private View revealRightView;
+        private View frontView;
+
+
+        public MyAnimatorListener(View revealLeftView, View revealRightView, View frontView) {
+            this.revealLeftView = revealLeftView;
+            this.revealRightView = revealRightView;
+            this.frontView = frontView;
+        }
+
+
+        @Override
+        public void onAnimationStart(Animator animation) {
+            runningAnimationsOn.add(frontView);
+        }
+
+        @Override
+        public void onAnimationEnd(Animator animation) {
+            runningAnimationsOn.remove(frontView);
+            checkQueue();
+            revealLeftView.setVisibility(View.GONE);
+            revealRightView.setVisibility(View.GONE);
+        }
+
+        @Override
+        public void onAnimationCancel(Animator animation) {
+            runningAnimationsOn.remove(frontView);
+            checkQueue();
+            revealLeftView.setVisibility(View.GONE);
+            revealRightView.setVisibility(View.GONE);
+        }
+
+        @Override
+        public void onAnimationRepeat(Animator animation) {
+            runningAnimationsOn.add(frontView);
+        }
+    }
+
 
     private void resolveState() {
         if (frontView == null) {
@@ -272,10 +317,10 @@ public class SwipeToAction {
 
             if (diffX <= 5 && diffY <= 5) {
                 int pressTime = (int) (upTime - downTime);
-                if  (pressTime > LONG_PRESS_TIME) {
-                    swipeListener.onLongClick(touchedViewHolder.getItemData());
+                if (pressTime > LONG_PRESS_TIME) {
+                    swipeListener.onLongClick(touchedViewHolder);
                 } else {
-                    swipeListener.onClick(touchedViewHolder.getItemData());
+                    swipeListener.onClick(touchedViewHolder);
                 }
             }
 
@@ -303,7 +348,7 @@ public class SwipeToAction {
                     @Override
                     public void onAnimationEnd(Animator animation) {
                         runningAnimationsOn.remove(animated);
-                        if (swipeListener.swipeRight(touchedViewHolder.getItemData())) {
+                        if (swipeListener.swipeRight(touchedViewHolder)) {
                             resetPosition();
                         } else {
                             checkQueue();
@@ -313,6 +358,11 @@ public class SwipeToAction {
                     @Override
                     public void onAnimationCancel(Animator animation) {
                         runningAnimationsOn.remove(animated);
+                        if (swipeListener.swipeRight(touchedViewHolder)) {
+                            resetPosition();
+                        } else {
+                            checkQueue();
+                        }
                     }
 
                     @Override
@@ -340,7 +390,7 @@ public class SwipeToAction {
                     @Override
                     public void onAnimationEnd(Animator animation) {
                         runningAnimationsOn.remove(animated);
-                        if (swipeListener.swipeLeft(touchedViewHolder.getItemData())) {
+                        if (swipeListener.swipeLeft(touchedViewHolder)) {
                             resetPosition();
                         } else {
                             checkQueue();
@@ -348,12 +398,17 @@ public class SwipeToAction {
                     }
 
                     @Override
-                    public void onAnimationCancel (Animator animation){
+                    public void onAnimationCancel(Animator animation) {
                         runningAnimationsOn.remove(animated);
+                        if (swipeListener.swipeLeft(touchedViewHolder)) {
+                            resetPosition();
+                        } else {
+                            checkQueue();
+                        }
                     }
 
                     @Override
-                    public void onAnimationRepeat (Animator animation){
+                    public void onAnimationRepeat(Animator animation) {
                         runningAnimationsOn.add(animated);
                     }
                 }).x(frontViewX - frontViewW);
@@ -381,7 +436,9 @@ public class SwipeToAction {
     }
 
 
-    /** Exposed methods **/
+    /**
+     * Exposed methods
+     **/
 
     public void swipeLeft(int position) {
         // workaround in case a swipe call while dragging
@@ -406,19 +463,27 @@ public class SwipeToAction {
     }
 
 
-    /** Public interfaces & classes */
+    /**
+     * Public interfaces & classes
+     */
 
     public interface SwipeListener<T extends Object> {
         boolean swipeLeft(T itemData);
+
         boolean swipeRight(T itemData);
+
         void onClick(T itemData);
+
         void onLongClick(T itemData);
     }
 
     public interface IViewHolder<T extends Object> {
         View getFront();
+
         View getRevealLeft();
+
         View getRevealRight();
+
         <T extends Object> T getItemData();
     }
 
@@ -443,7 +508,7 @@ public class SwipeToAction {
                 if (childCount < 1) {
                     throw new RuntimeException("You must provide a view with tag='front'");
                 } else {
-                    front = vg.getChildAt(childCount-1);
+                    front = vg.getChildAt(childCount - 1);
                 }
             }
 
@@ -483,6 +548,8 @@ public class SwipeToAction {
         }
 
         @Override
-        public T getItemData() { return data; }
+        public T getItemData() {
+            return data;
+        }
     }
 }
